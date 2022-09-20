@@ -20,7 +20,12 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
     autopc_path <- file.path(mcn_dir, "4_autosomal_PCA.rds")
     mcnpgs_path <- file.path(mcn_dir, "7_pc_orient", "2_mcn_pgs.rds")
     if (!dir.exists(output_dir)) stop("Directory ", output_dir, " does not exist.")
-    if (file.exists(file.path(output_dir, "check_pc_number.log"))) invisible(file.remove(file.path(output_dir, "check_pc_number.log")))
+    if (file.exists(file.path(output_dir, "check_pc_number.log"))) {
+        i <- 1
+        while (file.exists(file.path(output_dir, paste0("check_pc_number.log.old", i)))) i <- i + 1
+        invisible(file.rename(file.path(output_dir, "check_pc_number.log"),
+                              file.path(output_dir, paste0("check_pc_number.log.old", i))))
+    }
     logReset()
     addHandler(writeToConsole)
     addHandler(writeToFile, file = file.path(output_dir, "check_pc_number.log"))

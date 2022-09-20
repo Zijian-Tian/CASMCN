@@ -22,7 +22,12 @@
 #' @importFrom utils read.csv read.table write.table
 estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, autosomal_markers = hq_autosomal_markers, mitochondrial_markers = hq_mitochondrial_markers, apt_exec_dir = NULL, penncnv_exec_dir = NULL, pc_used = 0.01, keep_tempfile = TRUE, ignore_existing_tempfiles = FALSE, correlated_pheno = NULL, correlation_direction = '+') {
     if (!dir.exists(output_dir)) dir.create(output_dir)
-    if (file.exists(file.path(output_dir, "estimate_MCN_from_CEL.log"))) invisible(file.remove(file.path(output_dir, "estimate_MCN_from_CEL.log")))
+    if (file.exists(file.path(output_dir, "estimate_MCN_from_CEL.log"))) {
+        i <- 1
+        while (file.exists(file.path(output_dir, paste0("estimate_MCN_from_CEL.log.old", i)))) i <- i + 1
+        invisible(file.rename(file.path(output_dir, "estimate_MCN_from_CEL.log"),
+                              file.path(output_dir, paste0("estimate_MCN_from_CEL.log.old", i))))
+    }
     setDTthreads(0)
     logReset()
     addHandler(writeToConsole)
@@ -336,6 +341,7 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
         pid_full <- file.path(geno_tempdir, "all_probesets.txt")
         data.frame(probeset_id = c(autosomal_markers, mitochondrial_markers)) %>%
             write.table(pid_full, quote = F, row.names = F, col.names = T)
+        ext_log <- file.path(ext_dir, "CASArray_extract.log")
         temp_exec <- "ps-extract"
         if (!is.null(apt_exec_dir)) temp_exec <- file.path(apt_exec_dir, temp_exec)
         temp_cmd <- paste(temp_exec,
@@ -343,7 +349,8 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
             "--confidence-file", file.path(gt_dir, "AxiomGT1.confidences.txt"),
             "--summary-file", file.path(gt_dir, "AxiomGT1.summary.txt"),
             "--pid-file", pid_full,
-            "--output-dir", ext_dir)
+            "--output-dir", ext_dir,
+            "--log-file", ext_log)
         logdebug(paste0("Calling command: ", temp_cmd))
         system(temp_cmd, ignore.stdout = T, ignore.stderr = T)
         for (i in c("extract_calls.txt", "extract_confidences.txt", "extract_summary.txt")) {
@@ -615,7 +622,7 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
     mito_pc1 <- prcomp(mito_lrr_adjusted, rank. = 1, scale. = TRUE)$x
     mcn_raw <- as.data.frame(mito_pc1) %>%
         rename(MCN = PC1) %>%
-        mutate(Sample_Name = all_lrr_colnames) %>%
+        mutate(Sample_Name = rownames(mito_lrr_adjusted)) %>%
         select(Sample_Name, MCN)
     loginfo("STEP3.7: Orientation of mitochondrial PC")
     if (!is.null(correlated_pheno)) {
@@ -636,7 +643,7 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
         final_output <- file.path(output_dir, "CASMCN_result.txt")
         write.table(mcn_final, final_output, quote = F, sep = '\t', row.names = F, col.names = T)
         loginfo(paste0("Final MCN estimate saved at ", final_output, "."))
-        temp_merge <- merge(mcn_raw, correlated_pheno, by = "Sample_Name")
+        temp_merge <- merge(mcn_final, correlated_pheno, by = "Sample_Name")
         temp_cor <- cor.test(temp_merge$MCN, temp_merge$Phenotype, method = "spearman")
         loginfo(paste0("Correlation between MCN and reference phenotype: Spearman's Rho = ", signif(temp_cor$estimate, 2), ", p = ", signif(temp_cor$p.value, 2), "."))
     } else {
@@ -660,12 +667,14 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
                     select(probeid) %>%
                     rename(probeset_id = probeid) %>%
                     write.table(prs_pid, quote = F, row.names = F, col.names = T)
+                prs_ext_log <- file.path(prs_ext_dir, "CASArray_extract.log")
                 temp_exec <- "ps-extract"
                 if (!is.null(apt_exec_dir)) temp_exec <- file.path(apt_exec_dir, temp_exec)
                 temp_cmd <- paste(temp_exec,
                     "--call-file", file.path(gt_dir, "AxiomGT1.calls.txt"),
                     "--pid-file", prs_pid,
-                    "--output-dir", prs_ext_dir)
+                    "--output-dir", prs_ext_dir,
+                    "--log-file", prs_ext_log)
                 logdebug(paste0("Calling command: ", temp_cmd))
                 system(temp_cmd, ignore.stdout = T, ignore.stderr = T)
                 if (!file.exists(prs_ext_geno)) {
@@ -717,8 +726,7 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
         final_output <- file.path(output_dir, "CASMCN_result.txt")
         write.table(mcn_final, final_output, quote = F, sep = '\t', row.names = F, col.names = T)
         loginfo(paste0("Final MCN estimate saved at ", final_output, "."))
-        temp_merge <- data.frame(Sample_Name = colnames(prs_res), PRS = prs_res[, ]) %>%
-            merge(mcn_raw)
+        temp_merge <- merge(prs_df, mcn_final)
         temp_cor <- cor.test(temp_merge$MCN, temp_merge$PRS, method = "spearman")
         loginfo(paste0("Correlation between MCN and reference PGS: Spearman's Rho = ", signif(temp_cor$estimate, 2), ", p = ", signif(temp_cor$p.value, 2), "."))
     }
