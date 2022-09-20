@@ -15,3 +15,5 @@ RoxygenNote: 7.2.1
 LazyData: true
 Suggests: knitr, rmarkdown, markdown
 VignetteBuilder: knitr
+URL: https://github.com/Zijian-Tian/CASMCN/
+BugReports: https://github.com/Zijian-Tian/CASMCN/issues

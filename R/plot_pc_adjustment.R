@@ -112,5 +112,5 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
         cor(temp_merge$Phenotype, temp_merge$MCN, method = "spearman")
     }
     stopImplicitCluster()
-    plot(abs(temp_res), xlab = "Number of PC(s) included", ylab = pheno_name)
+    plot(abs(temp_res), xlab = "Number of PC(s) included", ylab = paste0("Correlation between MCN estimates and ", pheno_name))
 }
