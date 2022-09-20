@@ -5,7 +5,7 @@
 \title{Estimate MCN from CEL files.}
 \usage{
 estimate_mcn_from_cel(
-  cel_list,
+  cel_files,
   output_dir,
   apt_lib_dir,
   gc5_file,
@@ -21,7 +21,7 @@ estimate_mcn_from_cel(
 )
 }
 \arguments{
-\item{cel_list}{A character vector containing paths to all CEL files to be included in MCN estimation.}
+\item{cel_files}{A character vector containing paths to all CEL files to be included in MCN estimation.}
 
 \item{output_dir}{Path to the output directory.}
 

@@ -1,6 +1,6 @@
 Package: CASMCN
 Title: Mitochondrial Copy Number Estimation for CAS Array
-Version: 1.0.0.0
+Version: 1.0.0.1
 Authors@R: 
     person("Zijian", "Tian", , "tian_4116@163.com", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-2182-5381"))

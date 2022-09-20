@@ -1,6 +1,6 @@
 #' @title Estimate MCN from CEL files.
 #' @description Generate MCN estimates from CEL files producted by CAS Array.
-#' @param cel_list A character vector containing paths to all CEL files to be included in MCN estimation.
+#' @param cel_files A character vector containing paths to all CEL files to be included in MCN estimation.
 #' @param output_dir Path to the output directory.
 #' @param apt_lib_dir Path to the library directory of CAS Array for APT. The directory should contain several XML for APT analysis and a CSV as array annotation.
 #' @param gc5_file Path to the gzipped gc model file from PennCNV. The file could be found in gc_file/hg38.gc5Base.txt.gz in your local PennCNV installation or be downloaded at https://github.com/WGLab/PennCNV/blob/master/gc_file/hg38.gc5Base.txt.gz.
@@ -20,7 +20,7 @@
 #' @importFrom HardyWeinberg HWExactStats
 #' @importFrom stats cor.test lm prcomp sd
 #' @importFrom utils read.csv read.table write.table
-estimate_mcn_from_cel <- function(cel_list, output_dir, apt_lib_dir, gc5_file, autosomal_markers = hq_autosomal_markers, mitochondrial_markers = hq_mitochondrial_markers, apt_exec_dir = NULL, penncnv_exec_dir = NULL, pc_used = 0.01, keep_tempfile = TRUE, ignore_existing_tempfiles = FALSE, correlated_pheno = NULL, correlation_direction = '+') {
+estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, autosomal_markers = hq_autosomal_markers, mitochondrial_markers = hq_mitochondrial_markers, apt_exec_dir = NULL, penncnv_exec_dir = NULL, pc_used = 0.01, keep_tempfile = TRUE, ignore_existing_tempfiles = FALSE, correlated_pheno = NULL, correlation_direction = '+') {
     if (!dir.exists(output_dir)) dir.create(output_dir)
     if (file.exists(file.path(output_dir, "estimate_MCN_from_CEL.log"))) invisible(file.remove(file.path(output_dir, "estimate_MCN_from_CEL.log")))
     setDTthreads(0)
