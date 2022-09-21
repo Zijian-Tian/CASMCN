@@ -68,6 +68,18 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
             logerror("\"correlated_pheno\" should be either NULL or a data frame with \"Sample_Name\" and \"Phenotype\" columns.")
             stop("Invalid \"correlated_pheno\" argument.")
         }
+        temp_common_samp <- sum(colnames(mito_lrr) %in% correlated_pheno$Sample_Name)
+        if (temp_common_samp == 0) {
+            logerror("No common sample between genotyping results and \"correlated_pheno\". Please check the sample names. (Sample names are defined as CEL file names. Did you forget the \".CEL\" surfix?)")
+            stop("No common sample between genotyping results and \"correlated_pheno\".")
+        }
+        if (temp_common_samp < 4) {
+            logerror("No enouch common sample between genotyping results and \"correlated_pheno\". Please check the sample names. (Sample names are defined as CEL file names. Did you forget the \".CEL\" surfix?)")
+            stop("No enouch common sample between genotyping results and \"correlated_pheno\".")
+        }
+        if (temp_common_samp < 200) {
+            logwarn(paste0("Only ", temp_common_samp, " common sample found between genotyping results and \"correlated_pheno\". The correlation may not have enough power."))
+        }
     }
     loginfo("All preparation complete.")
     if (max_pc_num < 1) {

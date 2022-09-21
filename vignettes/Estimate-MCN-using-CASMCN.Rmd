@@ -71,7 +71,7 @@ The final result of MCN estimation will be written to "CASMCN_result.txt" in the
 An external phenotype associated with MCN is needed to oriantate the PC derived from mitochondrial intensity signal. The correlated phenotype should be provided as a data frame with two columns "Sample_Name" and "Phenotype":
 
 ```{r, include = FALSE}
-correlated_pheno <- data.frame(Sample_Name = paste0("sample", seq(6)),
+correlated_pheno <- data.frame(Sample_Name = paste0("sample", seq(6), ".CEL"),
                                Phenotype = rnorm(6))
 ```
 

@@ -58,6 +58,18 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
             logerror("\"correlated_pheno\" should be either NULL or a data frame with \"Sample_Name\" and \"Phenotype\" columns.")
             stop("Invalid \"correlated_pheno\" argument.")
         }
+        temp_common_samp <- sum(basename(cel_files) %in% correlated_pheno$Sample_Name)
+        if (temp_common_samp == 0) {
+            logerror("No common sample between \"cel_files\" and \"correlated_pheno\". Please check the sample names. (Sample names are defined as CEL file names. Did you forget the \".CEL\" surfix?)")
+            stop("No common sample between \"cel_files\" and \"correlated_pheno\".")
+        }
+        if (temp_common_samp < 4) {
+            logerror("No enouch common sample between \"cel_files\" and \"correlated_pheno\". Please check the sample names. (Sample names are defined as CEL file names. Did you forget the \".CEL\" surfix?)")
+            stop("No enouch common sample between \"cel_files\" and \"correlated_pheno\".")
+        }
+        if (temp_common_samp < 200) {
+            logwarn(paste0("Only ", temp_common_samp, " common sample found between \"cel_files\" and \"correlated_pheno\". The correlation may not have enough power."))
+        }
     }
     logdebug("Checking if every file in CEL list exists...")
     for (cel_file in cel_files) {
@@ -65,6 +77,9 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
             logerror(paste(cel_file, "in CEL list is not found."))
             stop(paste(cel_file, "in CEL list is not found."))
         }
+    }
+    if (length(cel_files) < 1000) {
+        logwarn("MCN estimates may not powerful enough in small populations.")
     }
     logdebug("Checking if APT library directory exists...")
     if (!dir.exists(apt_lib_dir)) {
