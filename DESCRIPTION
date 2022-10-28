@@ -1,12 +1,12 @@
 Package: CASMCN
 Title: Mitochondrial Copy Number Estimation for CAS Array
-Version: 1.0.0.2
+Version: 1.0.0.3
 Authors@R: 
     person("Zijian", "Tian", , "tian_4116@163.com", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-2182-5381"))
 Description: Estimate mitochondrial copy number (MCN) from raw genotyping result of CAS Array.
 Depends: R (>= 4.1.0)
-Imports: stats, utils, dplyr, data.table, doParallel, foreach, parallel, logging, HardyWeinberg
+Imports: stats, utils, dplyr, tidyr, data.table, doParallel, foreach, parallel, logging, HardyWeinberg
 SystemRequirements: APT <https://www.thermofisher.com/cn/zh/home/life-science/microarray-analysis/microarray-analysis-partners-programs/affymetrix-developers-network/affymetrix-power-tools.html> and PennCNV <https://penncnv.openbioinformatics.org/en/latest/> are needed for MCN estimation.
 License: GPL (>= 3)
 Encoding: UTF-8

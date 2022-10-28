@@ -13,6 +13,7 @@
 #' @importFrom data.table fread setDTthreads
 #' @importFrom HardyWeinberg HWExactStats
 #' @importFrom stats cor lm prcomp
+#' @importFrom tidyr drop_na
 plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno = NULL) {
     mcn_dir <- file.path(output_dir, "tempdir", "3_R_MCN")
     auto_path <- file.path(mcn_dir, "3_autosomal_LRR.rds")
@@ -68,6 +69,9 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
             logerror("\"correlated_pheno\" should be either NULL or a data frame with \"Sample_Name\" and \"Phenotype\" columns.")
             stop("Invalid \"correlated_pheno\" argument.")
         }
+        correlated_pheno <- correlated_pheno %>%
+            select(Sample_Name, Phenotype) %>%
+            drop_na()
         temp_common_samp <- sum(colnames(mito_lrr) %in% correlated_pheno$Sample_Name)
         if (temp_common_samp == 0) {
             logerror("No common sample between genotyping results and \"correlated_pheno\". Please check the sample names. (Sample names are defined as CEL file names. Did you forget the \".CEL\" surfix?)")

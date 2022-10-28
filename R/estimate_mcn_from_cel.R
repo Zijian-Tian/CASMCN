@@ -20,6 +20,7 @@
 #' @importFrom HardyWeinberg HWExactStats
 #' @importFrom stats cor.test lm prcomp sd
 #' @importFrom utils read.csv read.table write.table
+#' @importFrom tidyr drop_na
 estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, autosomal_markers = hq_autosomal_markers, mitochondrial_markers = hq_mitochondrial_markers, apt_exec_dir = NULL, penncnv_exec_dir = NULL, pc_used = 0.01, keep_tempfile = TRUE, ignore_existing_tempfiles = FALSE, correlated_pheno = NULL, correlation_direction = '+') {
     if (!dir.exists(output_dir)) dir.create(output_dir)
     if (file.exists(file.path(output_dir, "estimate_MCN_from_CEL.log"))) {
@@ -58,6 +59,9 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
             logerror("\"correlated_pheno\" should be either NULL or a data frame with \"Sample_Name\" and \"Phenotype\" columns.")
             stop("Invalid \"correlated_pheno\" argument.")
         }
+        correlated_pheno <- correlated_pheno %>%
+            select(Sample_Name, Phenotype) %>%
+            drop_na()
         temp_common_samp <- sum(basename(cel_files) %in% correlated_pheno$Sample_Name)
         if (temp_common_samp == 0) {
             logerror("No common sample between \"cel_files\" and \"correlated_pheno\". Please check the sample names. (Sample names are defined as CEL file names. Did you forget the \".CEL\" surfix?)")
