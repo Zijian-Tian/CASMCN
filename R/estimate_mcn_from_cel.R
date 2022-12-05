@@ -16,9 +16,10 @@
 #' @export
 #' @import dplyr
 #' @import logging
+#' @import bigstatsr
 #' @importFrom data.table fread setDTthreads
 #' @importFrom HardyWeinberg HWExactStats
-#' @importFrom stats cor.test lm prcomp sd
+#' @importFrom stats cor.test lm sd predict
 #' @importFrom utils read.csv read.table write.table
 #' @importFrom tidyr drop_na
 estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, autosomal_markers = hq_autosomal_markers, mitochondrial_markers = hq_mitochondrial_markers, apt_exec_dir = NULL, penncnv_exec_dir = NULL, pc_used = 0.01, keep_tempfile = TRUE, ignore_existing_tempfiles = FALSE, correlated_pheno = NULL, correlation_direction = '+') {
@@ -547,10 +548,13 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
     loginfo("STEP3: Estimate MCN using R")
     mcn_dir <- file.path(temp_dir, "3_R_MCN")
     dir.create(mcn_dir, showWarnings = F)
-    if (all(file.exists(file.path(mcn_dir, "3_autosomal_LRR.rds")),
+    if (all(file.exists(file.path(mcn_dir, "3_sample_QC.rds")),
+            file.exists(file.path(mcn_dir, "3_autosomal_LRR.rds")),
+            file.exists(file.path(mcn_dir, "3_autosomal_LRR.bk")),
             file.exists(file.path(mcn_dir, "3_mitochondrial_LRR.rds")))) {
         loginfo("Extracted LRR files already exist. Skipping STEP3.1-3.3...")
-        auto_lrr <- readRDS(file.path(mcn_dir, "3_autosomal_LRR.rds"))
+        sample_qc_info <- readRDS(file.path(mcn_dir, "3_sample_QC.rds"))
+        X_auto_lrr <- big_attach(file.path(mcn_dir, "3_autosomal_LRR.rds"))
         mito_lrr <- readRDS(file.path(mcn_dir, "3_mitochondrial_LRR.rds"))
     } else {
         loginfo("STEP3.1: Read LRR files")
@@ -589,60 +593,77 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
         auto_lrr <- all_lrr[ind.auto, ]
         lrr_sd <- apply(auto_lrr, 2, sd)
         ind.lrrsd <- lrr_sd > 0.35
-        write.table(data.frame(sample_name = all_lrr_colnames, lrr_sd = lrr_sd, keep = !ind.lrrsd), file.path(mcn_dir, "3_sample_QC.txt"), quote = F, sep = '\t', col.names = T, row.names = F)
+        sample_qc_info <- data.frame(sample_name = all_lrr_colnames, lrr_sd = lrr_sd, used_in_PCA = !ind.lrrsd)
+        write.table(sample_qc_info, file.path(mcn_dir, "3_sample_QC.txt"), quote = F, sep = '\t', col.names = T, row.names = F)
+        saveRDS(sample_qc_info, file.path(mcn_dir, "3_sample_QC.rds"))
         logdebug(paste0(sum(ind.lrrsd), " samples excluded for high LRR SD (>0.35)."))
-        auto_lrr <- auto_lrr[, !ind.lrrsd, with = F]
-        all_lrr_colnames <- all_lrr_colnames[!ind.lrrsd]
-        loginfo(paste0(ncol(auto_lrr), " samples were included for MCN estimation."))
+        loginfo(paste0(sum(!ind.lrrsd), " samples were included for MCN estimation."))
         ind.mito <- which(all_lrr_rowinfo$Name %in% mt_marker_used)
-        mito_lrr <- all_lrr[ind.mito, !ind.lrrsd, with = F]
+        mito_lrr <- all_lrr[ind.mito, ]
         logdebug("Saving LRR...")
-        saveRDS(auto_lrr, file.path(mcn_dir, "3_autosomal_LRR.rds"))
+        if (file.exists(file.path(mcn_dir, "3_autosomal_LRR.bk"))) {
+            logdebug("Deleting old FBM...")
+            unlink(file.path(mcn_dir, "3_autosomal_LRR.bk"))
+        }
+        X_auto_lrr <- as_FBM(t(auto_lrr), backingfile = file.path(mcn_dir, "3_autosomal_LRR"))
+        saveRDS(X_auto_lrr, file.path(mcn_dir, "3_autosomal_LRR.rds"))
         saveRDS(mito_lrr, file.path(mcn_dir, "3_mitochondrial_LRR.rds"))
         rm(all_lrr)
     }
     loginfo("STEP3.4: PCA of autosomal LRR")
+    ind.pcincl <- sample_qc_info$used_in_PCA
+    N_pcincl <- sum(ind.pcincl)
     if (pc_used < 1) {
-        numpc <- round(pc_used * ncol(auto_lrr))
+        numpc <- round(pc_used * N_pcincl)
         if (numpc == 0) numpc <- 1
     } else {
         numpc <- pc_used
     }
     if (pc_used < 1 & numpc < 15) {
-        logwarn(paste0("Only ", numpc, "PC(s) were used (", ncol(auto_lrr), "*", pc_used, "). Consider set \"pc_used\" manually to better capture confounders."))
+        logwarn(paste0("Only ", numpc, "PC(s) were used (", N_pcincl, "*", pc_used, "). Consider set \"pc_used\" manually to better capture confounders."))
     }
-    if (numpc > ncol(auto_lrr)) {
-        logwarn(paste0("Number of PCs used (", numpc, ") is larger than the post QC sample size (", ncol(auto_lrr), "). Will use ", ncol(auto_lrr), " PCs."))
-        numpc <- ncol(auto_lrr)
+    if (numpc > N_pcincl) {
+        logwarn(paste0("Number of PCs used (", numpc, ") is larger than the post QC sample size (", N_pcincl, "). Will use ", N_pcincl, " PCs."))
+        numpc <- N_pcincl
     }
     flag_calcPC <- TRUE
     if (file.exists(file.path(mcn_dir, "4_autosomal_PCA.rds"))) {
-        auto_pca <- readRDS(file.path(mcn_dir, "4_autosomal_PCA.rds"))
-        if (ncol(auto_pca) >= numpc) {
+        auto_pca_scores <- readRDS(file.path(mcn_dir, "4_autosomal_PCA.rds"))
+        if (ncol(auto_pca_scores) >= numpc) {
             loginfo("Autosome PCA file already exist. Skipping STEP3.4...")
-            auto_pca <- auto_pca[, 1:numpc]
+            auto_pca_scores <- auto_pca_scores[, 1:numpc]
             flag_calcPC <- FALSE
         } else {
-            loginfo(paste0("Existing autosome PCA file doesn't have enough PCs (", ncol(auto_pca), "<", numpc, "). Recalculating ", numpc, " PC(s)..."))
+            loginfo(paste0("Existing autosome PCA file doesn't have enough PCs (", ncol(auto_pca_scores), "<", numpc, "). Recalculating ", numpc, " PC(s)..."))
         }
     } else {
         loginfo(paste0("Calculating ", numpc, " PC(s)..."))
     }
     if (flag_calcPC) {
-        auto_pca <- prcomp(t(auto_lrr), rank. = numpc, scale. = TRUE)$x
+        auto_pca <- big_randomSVD(X_auto_lrr, 
+                                  fun.scaling = big_scale(), 
+                                  ind.row = which(ind.pcincl), 
+                                  k = numpc, 
+                                  ncores = nb_cores())
+        auto_pca_scores <- predict(auto_pca, X_auto_lrr)
         logdebug("Saving autosomal PC(s)...")
-        saveRDS(auto_pca, file.path(mcn_dir, "4_autosomal_PCA.rds"))
+        saveRDS(auto_pca_scores, file.path(mcn_dir, "4_autosomal_PCA.rds"))
     }
     loginfo("STEP3.5: Adjust mitochondrial LRR by autosomal PCs")
     mito_lrr_adjusted <- apply(mito_lrr, 1, function(X) {
-        lm(X ~ auto_pca)$residuals
+        lm(X ~ auto_pca_scores)$residuals
     })
     loginfo("STEP3.6: PCA of mitochondrial LRR")
-    mito_pc1 <- prcomp(mito_lrr_adjusted, rank. = 1, scale. = TRUE)$x
-    mcn_raw <- as.data.frame(mito_pc1) %>%
-        rename(MCN = PC1) %>%
-        mutate(Sample_Name = rownames(mito_lrr_adjusted)) %>%
-        select(Sample_Name, MCN)
+    X_mito_lrr_adjusted <- as_FBM(mito_lrr_adjusted)
+    mito_pca <- big_randomSVD(X_mito_lrr_adjusted, 
+                              fun.scaling = big_scale(), 
+                              ind.row = which(ind.pcincl), 
+                              k = 1, 
+                              ncores = nb_cores())
+    mito_pc1 <- predict(mito_pca, X_mito_lrr_adjusted)
+    mcn_raw <- data.frame(Sample_Name = rownames(mito_lrr_adjusted),
+                          MCN = mito_pc1[, 1],
+                          used_in_PCA = ind.pcincl)
     loginfo("STEP3.7: Orientation of mitochondrial PC")
     if (!is.null(correlated_pheno)) {
         if (correlation_direction == '+') {
@@ -650,7 +671,7 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
         } else {
             loginfo("Orientating PC with phenotype negatively correlated with MCN...")
         }
-        temp_merge <- merge(mcn_raw, correlated_pheno, by = "Sample_Name")
+        temp_merge <- merge(mcn_raw[ind.pcincl, ], correlated_pheno, by = "Sample_Name")
         temp_cor <- cor.test(temp_merge$MCN, temp_merge$Phenotype, method = "spearman")
         if (temp_cor$p.value > 0.05) logwarn(paste0("Correlation between MCN and reference phenotype provided is not statistically significant (p = ", signif(temp_cor$p.value, 2), " > 0.05). Consider using other phenotypes or increasing the sample size."))
         if ((correlation_direction == '+' & temp_cor$estimate > 0) |
@@ -734,7 +755,7 @@ estimate_mcn_from_cel <- function(cel_files, output_dir, apt_lib_dir, gc5_file, 
             saveRDS(prs_df, prs_mcn)
         }
         loginfo("Orientating PC with MCN PGS...")
-        temp_merge <- merge(prs_df, mcn_raw)
+        temp_merge <- merge(prs_df, mcn_raw[ind.pcincl, ])
         temp_cor <- cor.test(temp_merge$MCN, temp_merge$PRS, method = "spearman")
         if (temp_cor$p.value > 0.05) logwarn(paste0("Correlation between MCN and PGS is not statistically significant (p = ", signif(temp_cor$p.value, 2), " > 0.05). Consider using other phenotypes or increasing the sample size."))
         if (temp_cor$estimate > 0) {

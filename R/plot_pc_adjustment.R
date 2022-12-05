@@ -9,15 +9,17 @@
 #' @import doParallel
 #' @import foreach
 #' @import logging
+#' @import bigstatsr
 #' @importFrom parallel detectCores
 #' @importFrom data.table fread setDTthreads
 #' @importFrom HardyWeinberg HWExactStats
-#' @importFrom stats cor lm prcomp
+#' @importFrom stats cor lm predict
 #' @importFrom tidyr drop_na
 plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno = NULL) {
     mcn_dir <- file.path(output_dir, "tempdir", "3_R_MCN")
     auto_path <- file.path(mcn_dir, "3_autosomal_LRR.rds")
     mito_path <- file.path(mcn_dir, "3_mitochondrial_LRR.rds")
+    info_path <- file.path(mcn_dir, "3_sample_QC.rds")
     autopc_path <- file.path(mcn_dir, "4_autosomal_PCA.rds")
     mcnpgs_path <- file.path(mcn_dir, "7_pc_orient", "2_mcn_pgs.rds")
     if (!dir.exists(output_dir)) stop("Directory ", output_dir, " does not exist.")
@@ -45,13 +47,20 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
         logerror(paste0(mito_path, " does not exist. Please run estimate_mcn_from_cel() with \"keep_tempfile = TRUE\" to generate the proper intermediate results for PC number check."))
         stop(mito_path, "does not exist.")
     }
+    if (!file.exists(info_path)) {
+        logerror(paste0(info_path, " does not exist. Please run estimate_mcn_from_cel() with \"keep_tempfile = TRUE\" to generate the proper intermediate results for PC number check."))
+        stop(info_path, "does not exist.")
+    }
     if (max_pc_num <= 0 | (max_pc_num >= 1 & as.integer(max_pc_num) != max_pc_num)) {
         logerror("\"max_pc_num\" should be a fraction between 0 and 1 (proportion of post-QC sample size) or an positive integer (count of PCs to be used).")
         stop("Invalid \"max_pc_num\" argument.")
     }
     mito_lrr <- readRDS(mito_path)
+    sample_qc_info <- readRDS(info_path)
+    ind.pcincl <- sample_qc_info$used_in_PCA
+    N_pcincl <- sum(ind.pcincl)
     if (is.null(correlated_pheno)) {
-        if (ncol(mito_lrr) >= 1000) {
+        if (N_pcincl >= 1000) {
             loginfo("No correlated phenotype provided. Will use MCN PRS for PC number check.")
         } else {
             logwarn("No correlated phenotype provided. Will use MCN PRS for PC number check. Note that this may not powerful enough in small sample size (e.g. <1000).")
@@ -87,24 +96,24 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
     }
     loginfo("All preparation complete.")
     if (max_pc_num < 1) {
-        numpc <- round(max_pc_num * ncol(mito_lrr))
+        numpc <- round(max_pc_num * N_pcincl)
         if (numpc == 0) numpc <- 1
     } else {
         numpc <- max_pc_num
     }
     if (max_pc_num < 1 & numpc < 15) {
-        logwarn(paste0("Only ", numpc, "PC(s) were used (", ncol(mito_lrr), "*", max_pc_num, "). Consider set a higher \"max_pc_num\" to better evaluate PC numbers to be used."))
+        logwarn(paste0("Only ", numpc, "PC(s) were used (", N_pcincl, "*", max_pc_num, "). Consider set a higher \"max_pc_num\" to better evaluate PC numbers to be used."))
     }
-    if (numpc > ncol(mito_lrr)) {
-        logwarn(paste0("Number of PCs used (", numpc, ") is larger than the post QC sample size (", ncol(mito_lrr), "). Will use ", ncol(mito_lrr), " PCs."))
-        numpc <- ncol(mito_lrr)
+    if (numpc > N_pcincl) {
+        logwarn(paste0("Number of PCs used (", numpc, ") is larger than the post QC sample size (", N_pcincl, "). Will use ", N_pcincl, " PCs."))
+        numpc <- N_pcincl
     }
     flag_calcPC <- TRUE
     if (file.exists(autopc_path)) {
-        auto_pca <- readRDS(autopc_path)
-        if (ncol(auto_pca) >= numpc) {
+        auto_pca_scores <- readRDS(autopc_path)
+        if (ncol(auto_pca_scores) >= numpc) {
             loginfo("Autosome PCA file already exist. Skipping PCA...")
-            auto_pca <- auto_pca[, 1:numpc]
+            auto_pca_scores <- auto_pca_scores[, 1:numpc]
             flag_calcPC <- FALSE
         } else {
             loginfo(paste0("Existing autosome PCA file doesn't have enough PCs (", ncol(auto_pca), "<", numpc, "). Recalculating ", numpc, " PC(s)..."))
@@ -113,25 +122,36 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
         loginfo(paste0("Calculating ", numpc, " PC(s)..."))
     }
     if (flag_calcPC) {
-        auto_lrr <- readRDS(auto_path)
-        auto_pca <- prcomp(t(auto_lrr), rank. = numpc, scale. = TRUE)$x
+        X_auto_lrr <- big_attach(auto_path)
+        auto_pca <- big_randomSVD(X_auto_lrr, 
+                                  fun.scaling = big_scale(), 
+                                  ind.row = which(ind.pcincl), 
+                                  k = numpc, 
+                                  ncores = nb_cores())
+        auto_pca_scores <- predict(auto_pca, X_auto_lrr)
         logdebug("Saving autosomal PC(s)...")
-        saveRDS(auto_pca, autopc_path)
+        saveRDS(auto_pca_scores, autopc_path)
     }
+    # use only HQ samples
+    auto_pca <- auto_pca_scores[ind.pcincl, ]
+    mito_lrr <- mito_lrr[, ind.pcincl, with = F]
     loginfo("Calculating MCN estimates adjusted by different number of autosomal PCs...")
     registerDoParallel(detectCores())
     temp_res <- foreach(i = 1:numpc, .combine = c) %dopar% {
         mito_lrr_adjusted <- apply(mito_lrr, 1, function(X) {
             lm(X ~ auto_pca[, 1:i])$residuals
         })
-        temp_merge <- prcomp(mito_lrr_adjusted, rank. = 1, scale. = TRUE)$x %>%
-            as.data.frame() %>%
-            rename(MCN = PC1) %>%
-            mutate(Sample_Name = rownames(mito_lrr_adjusted)) %>%
-            select(Sample_Name, MCN) %>%
-            merge(correlated_pheno)
+        mito_pc1 <- as_FBM(mito_lrr_adjusted) %>%
+            big_randomSVD(fun.scaling = big_scale(), 
+                          k = 1, 
+                          ncores = 1) %>%
+            predict()
+        mcn_raw <- data.frame(Sample_Name = rownames(mito_lrr_adjusted),
+                              MCN = mito_pc1[, 1])
+        temp_merge <- merge(mcn_raw, correlated_pheno)
         cor(temp_merge$Phenotype, temp_merge$MCN, method = "spearman")
     }
     stopImplicitCluster()
     plot(abs(temp_res), xlab = "Number of PC(s) included", ylab = paste0("Correlation between MCN estimates and ", pheno_name))
+    loginfo("PC number check complete.")
 }
