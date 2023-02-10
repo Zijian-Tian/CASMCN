@@ -116,7 +116,7 @@ plot_pc_adjustment <- function(output_dir, max_pc_num = 0.01, correlated_pheno =
             auto_pca_scores <- auto_pca_scores[, 1:numpc]
             flag_calcPC <- FALSE
         } else {
-            loginfo(paste0("Existing autosome PCA file doesn't have enough PCs (", ncol(auto_pca), "<", numpc, "). Recalculating ", numpc, " PC(s)..."))
+            loginfo(paste0("Existing autosome PCA file doesn't have enough PCs (", ncol(auto_pca_scores), "<", numpc, "). Recalculating ", numpc, " PC(s)..."))
         }
     } else {
         loginfo(paste0("Calculating ", numpc, " PC(s)..."))
